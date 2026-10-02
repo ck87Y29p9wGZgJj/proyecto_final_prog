@@ -1,0 +1,12 @@
+.venv/
+venv/
+env/
+
+__pycache__/
+*.pyc
+
+
+README.md
+objetivo.md
+proyecto-final-programacion.docx
+
