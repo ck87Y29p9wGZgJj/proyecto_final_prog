@@ -1,51 +1,101 @@
-import uuid
-from models.doctor import Doctor
-from services.almacenamiento import cargar_datos, guardar_datos
+# SERVICIO: Doctores
+# Operaciones para registrar, editar, listar y eliminar doctores
 
-ARCHIVO = "doctores.json"
+import uuid
+
+from models.doctor import Doctor
+from services.almacenamiento import cargar_modelos, guardar_datos
+from services.validaciones import texto_obligatorio
+
+# Constante con el nombre del archivo
+ARCHIVO_DOCTORES = "doctores.json"
+
 
 def obtener_doctores():
-    datos = cargar_datos(ARCHIVO)
-    return [Doctor.from_dict(d) for d in datos]
+    # Carga y devuelve la lista de todos los doctores registrados.
+    return cargar_modelos(ARCHIVO_DOCTORES, Doctor)
+
 
 def _guardar_todos(doctores):
-    datos = [d.to_dict() for d in doctores]
-    return guardar_datos(ARCHIVO, datos)
+    # Convierte la lista de objetos Doctor a diccionarios y los guarda.
+    lista_diccionarios = []
+    for doc in doctores:
+        lista_diccionarios.append(doc.to_dict())
+    guardar_datos(ARCHIVO_DOCTORES, lista_diccionarios)
+
 
 def registrar_doctor(nombre, especialidad):
-    if not nombre or not especialidad:
-        raise ValueError("El nombre y la especialidad son obligatorios.")
+    # Registra un nuevo doctor en el sistema.
+    # Validamos los campos obligatorios
+    nombre = texto_obligatorio(nombre, "El nombre")
+    especialidad = texto_obligatorio(especialidad, "La especialidad")
 
     doctores = obtener_doctores()
-    
+
+    # Generamos identificador unico
     nuevo_id = str(uuid.uuid4())
     nuevo_doctor = Doctor(nuevo_id, nombre, especialidad)
+
+    # Agregamos a la lista y guardamos
     doctores.append(nuevo_doctor)
-    
     _guardar_todos(doctores)
+
     return nuevo_doctor
 
+
 def actualizar_doctor(id_doctor, nombre, especialidad):
-    if not nombre or not especialidad:
-        raise ValueError("El nombre y la especialidad son obligatorios.")
+    # Modifica los datos de un doctor existente.
+    id_doctor = texto_obligatorio(id_doctor, "El identificador del doctor")
+    nombre = texto_obligatorio(nombre, "El nombre")
+    especialidad = texto_obligatorio(especialidad, "La especialidad")
 
     doctores = obtener_doctores()
-    for d in doctores:
-        if d.id == id_doctor:
-            d.nombre = nombre
-            d.especialidad = especialidad
-            _guardar_todos(doctores)
-            return d
-            
-    raise ValueError("Doctor no encontrado.")
+
+    # Buscamos el doctor utilizando un bucle while
+    doctor_encontrado = None
+    indice = 0
+    while indice < len(doctores):
+        if doctores[indice].id == id_doctor:
+            doctor_encontrado = doctores[indice]
+            break
+        indice += 1
+
+    if doctor_encontrado is None:
+        raise ValueError("Doctor no encontrado.")
+
+    # Actualizamos los valores
+    doctor_encontrado.nombre = nombre
+    doctor_encontrado.especialidad = especialidad
+
+    _guardar_todos(doctores)
+    return doctor_encontrado
+
 
 def eliminar_doctor(id_doctor):
+    # Elimina un doctor si no tiene citas medicas programadas.
+    id_doctor = texto_obligatorio(id_doctor, "El identificador del doctor")
     doctores = obtener_doctores()
-    doctores_nuevos = [d for d in doctores if d.id != id_doctor]
-    
-    if len(doctores) == len(doctores_nuevos):
+
+    doctor_a_eliminar = None
+    for doc in doctores:
+        if doc.id == id_doctor:
+            doctor_a_eliminar = doc
+            break
+
+    if doctor_a_eliminar is None:
         raise ValueError("Doctor no encontrado.")
-    
-    # Pendiente: Validar que no tenga citas asignadas antes de borrarlo
-    _guardar_todos(doctores_nuevos)
+
+    # Importacion local para evitar ciclos
+    from services.citas_service import obtener_citas
+
+    citas = obtener_citas()
+    # Verificamos si tiene citas asociadas
+    for cita in citas:
+        if cita.doctor_id == id_doctor:
+            raise ValueError("No se puede eliminar el doctor porque tiene citas asociadas.")
+
+    # Eliminamos y guardamos cambios
+    doctores.remove(doctor_a_eliminar)
+    _guardar_todos(doctores)
+
     return True

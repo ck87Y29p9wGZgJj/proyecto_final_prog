@@ -1,59 +1,115 @@
-import uuid
-from models.paciente import Paciente
-from services.almacenamiento import cargar_datos, guardar_datos
+# SERVICIO: Pacientes
+# Operaciones para registrar, editar, listar y eliminar pacientes
 
-ARCHIVO = "pacientes.json"
+import uuid
+
+from models.paciente import Paciente
+from services.almacenamiento import cargar_modelos, guardar_datos
+from services.validaciones import texto_obligatorio, texto_opcional
+
+# Constante con el nombre del archivo
+ARCHIVO_PACIENTES = "pacientes.json"
+
 
 def obtener_pacientes():
-    datos = cargar_datos(ARCHIVO)
-    return [Paciente.from_dict(d) for d in datos]
+    # Carga y devuelve la lista de todos los pacientes registrados.
+    return cargar_modelos(ARCHIVO_PACIENTES, Paciente)
+
 
 def _guardar_todos(pacientes):
-    datos = [p.to_dict() for p in pacientes]
-    return guardar_datos(ARCHIVO, datos)
+    # Convierte la lista de objetos Paciente a diccionarios y los guarda.
+    lista_diccionarios = []
+    for p in pacientes:
+        lista_diccionarios.append(p.to_dict())
+    guardar_datos(ARCHIVO_PACIENTES, lista_diccionarios)
 
-def registrar_paciente(nombre, identificacion, telefono):
-    if not nombre or not identificacion:
-        raise ValueError("El nombre y la identificación son obligatorios.")
+
+def registrar_paciente(nombre, identificacion, telefono=""):
+    # Registra un nuevo paciente validando que la identificacion no se repita.
+    # Validamos las entradas
+    nombre = texto_obligatorio(nombre, "El nombre")
+    identificacion = texto_obligatorio(identificacion, "La identificación")
+    telefono = texto_opcional(telefono)
 
     pacientes = obtener_pacientes()
-    
-    if any(p.identificacion == identificacion for p in pacientes):
-        raise ValueError(f"Ya existe un paciente con la identificación {identificacion}.")
-        
+
+    # Verificamos si la identificacion ya existe utilizando un bucle while
+    indice = 0
+    while indice < len(pacientes):
+        if pacientes[indice].identificacion == identificacion:
+            raise ValueError("Ya existe un paciente con esa identificación.")
+        indice += 1
+
+    # Generamos un id unico para el paciente
     nuevo_id = str(uuid.uuid4())
     nuevo_paciente = Paciente(nuevo_id, nombre, identificacion, telefono)
+
+    # Agregamos a la lista y guardamos
     pacientes.append(nuevo_paciente)
-    
     _guardar_todos(pacientes)
+
     return nuevo_paciente
 
-def actualizar_paciente(id_paciente, nombre, identificacion, telefono):
-    if not nombre or not identificacion:
-        raise ValueError("El nombre y la identificación son obligatorios.")
+
+def actualizar_paciente(id_paciente, nombre, identificacion, telefono=""):
+    # Modifica la informacion de un paciente existente.
+    id_paciente = texto_obligatorio(id_paciente, "El identificador del paciente")
+    nombre = texto_obligatorio(nombre, "El nombre")
+    identificacion = texto_obligatorio(identificacion, "La identificación")
+    telefono = texto_opcional(telefono)
 
     pacientes = obtener_pacientes()
+
+    # Buscamos al paciente por su id
+    paciente_a_modificar = None
     for p in pacientes:
         if p.id == id_paciente:
-            # Si cambia la identificación, revisar que no choque con otro paciente
-            if p.identificacion != identificacion and any(otro.identificacion == identificacion for otro in pacientes):
-                raise ValueError("La nueva identificación ya está registrada en otro paciente.")
-                
-            p.nombre = nombre
-            p.identificacion = identificacion
-            p.telefono = telefono
-            _guardar_todos(pacientes)
-            return p
-            
-    raise ValueError("Paciente no encontrado.")
+            paciente_a_modificar = p
+            break
+
+    if paciente_a_modificar is None:
+        raise ValueError("Paciente no encontrado.")
+
+    # Verificamos que la nueva identificacion no le pertenezca a otro paciente
+    for otro in pacientes:
+        if otro.id != id_paciente and otro.identificacion == identificacion:
+            raise ValueError("La identificación ya está registrada en otro paciente.")
+
+    # Actualizamos los campos
+    paciente_a_modificar.nombre = nombre
+    paciente_a_modificar.identificacion = identificacion
+    paciente_a_modificar.telefono = telefono
+
+    _guardar_todos(pacientes)
+    return paciente_a_modificar
+
 
 def eliminar_paciente(id_paciente):
+    # Elimina un paciente si existe y no tiene citas medicas agendadas.
+    id_paciente = texto_obligatorio(id_paciente, "El identificador del paciente")
     pacientes = obtener_pacientes()
-    pacientes_nuevos = [p for p in pacientes if p.id != id_paciente]
-    
-    if len(pacientes) == len(pacientes_nuevos):
+
+    # Buscamos el paciente
+    paciente_a_eliminar = None
+    for p in pacientes:
+        if p.id == id_paciente:
+            paciente_a_eliminar = p
+            break
+
+    if paciente_a_eliminar is None:
         raise ValueError("Paciente no encontrado.")
-    
-    # Pendiente: Validar que no tenga citas asignadas antes de borrarlo (se hará al integrar citas)
-    _guardar_todos(pacientes_nuevos)
+
+    # Importamos localmente para evitar dependencias circulares
+    from services.citas_service import obtener_citas
+
+    citas = obtener_citas()
+    # Comprobamos si tiene citas asociadas
+    for cita in citas:
+        if cita.paciente_id == id_paciente:
+            raise ValueError("No se puede eliminar el paciente porque tiene citas asociadas.")
+
+    # Si no tiene citas, procedemos a eliminarlo
+    pacientes.remove(paciente_a_eliminar)
+    _guardar_todos(pacientes)
+
     return True
